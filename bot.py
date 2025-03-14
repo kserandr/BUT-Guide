@@ -1,66 +1,60 @@
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from aiogram.utils import executor
-import smtplib
-from email.mime.text import MIMEText
 import os
+import logging
+from aiogram import Bot, Dispatcher, types
+from aiogram.utils import executor
+from flask import Flask, request
+import threading
 
 TOKEN = "7713823915:AAHSvUOlvYtCoszYItEE3-pZNKjGackKw9Q"
-ORGANIZERS_EMAIL = "kserandr@gmail.com"
-EMAIL_PASSWORD = "your_email_password"
-SMTP_SERVER = "smtp.example.com"
-SMTP_PORT = 587
-
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-# Клавиатура
-keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-keyboard.add(KeyboardButton("ℹ Информация о маршруте"))
-keyboard.add(KeyboardButton("📍 Отправить местоположение", request_location=True))
-keyboard.add(KeyboardButton("🚨 Срочная помощь"))
+# Создаем Flask-приложение для поддержки работы на Render
+app = Flask(__name__)
 
-# Функция отправки письма организаторам
-def send_email(subject, message):
-    try:
-        msg = MIMEText(message)
-        msg["Subject"] = subject
-        msg["From"] = ORGANIZERS_EMAIL
-        msg["To"] = ORGANIZERS_EMAIL
-        
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()
-        server.login(ORGANIZERS_EMAIL, EMAIL_PASSWORD)
-        server.sendmail(ORGANIZERS_EMAIL, ORGANIZERS_EMAIL, msg.as_string())
-        server.quit()
-    except Exception as e:
-        print(f"Ошибка при отправке email: {e}")
+@app.route('/')
+def home():
+    return "Bot is running"
 
-# Обработчик команды /start
-@dp.message_handler(commands=['start'])
-async def start_command(message: types.Message):
-    await message.answer("Привет! Я бот-помощник для туристов на БУТ. Выберите действие:", reply_markup=keyboard)
+def run_flask():
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
 
-# Информация о маршруте
-@dp.message_handler(lambda message: message.text == "ℹ Информация о маршруте")
-async def send_info(message: types.Message):
-    info_text = "Большая Уральская Тропа – это уникальный маршрут, соединяющий лучшие природные достопримечательности Урала..."
-    await message.answer(info_text)
+@bot.message_handler(commands=["start"])
+async def start(message: types.Message):
+    await message.reply("Привет! Я твой бот-гид по Большой Уральской Тропе. Чем могу помочь?")
 
-# Отправка местоположения
-@dp.message_handler(content_types=['location'])
-async def location_handler(message: types.Message):
-    if message.location:
-        lat, lon = message.location.latitude, message.location.longitude
-        email_message = f"Турист отправил местоположение: {lat}, {lon}"
-        send_email("Местоположение туриста", email_message)
-        await message.answer("Ваше местоположение отправлено организаторам.")
+@bot.message_handler(commands=["help"])
+async def help_command(message: types.Message):
+    await message.reply("Я могу помочь тебе с информацией о Большой Уральской Тропе. Задавай вопросы!")
 
-# Экстренная помощь
-@dp.message_handler(lambda message: message.text == "🚨 Срочная помощь")
-async def emergency_handler(message: types.Message):
-    send_email("Срочная помощь", f"Турист {message.from_user.full_name} ({message.from_user.id}) запрашивает помощь!")
-    await message.answer("Сообщение отправлено организаторам! Они свяжутся с вами как можно скорее.")
+@bot.message_handler()
+async def handle_message(message: types.Message):
+    user_text = message.text.lower()
+    
+    if "маршрут" in user_text:
+        await message.reply("На БУТ есть несколько маршрутов. Какой именно вас интересует?")
+    elif "погода" in user_text:
+        await message.reply("Для информации о погоде используйте сайт: gismeteo.ru")
+    elif "помощь" in user_text:
+        await message.reply("Если вам нужна помощь, напишите, в чем именно проблема.")
+    else:
+        await message.reply("Я вас не понял. Попробуйте задать другой вопрос.")
+
+def start_bot():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(bot.start_polling())
 
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    # Запуск веб-сервера Flask в отдельном потоке
+    threading.Thread(target=start_bot).start()
+    
+    app = Flask(__name__)
+    
+    @app.route("/")
+    def home():
+        return "Bot is running"
+    
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
